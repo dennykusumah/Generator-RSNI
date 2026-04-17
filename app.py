@@ -78,8 +78,8 @@ from engine9 import CustomDictionary, ItalicDictionary, DocxFinalTranslatorEngin
 st.set_page_config(
     page_title="ISO Doc Master",
     page_icon="📑",
-    layout="centered", # Centered untuk fokus tampilan
-    initial_sidebar_state="collapsed" # Sidebar sembunyi default untuk clean look
+    layout="centered",
+    initial_sidebar_state="collapsed"
 )
 
 # --- CSS CUSTOM ---
@@ -580,6 +580,9 @@ LANG_OPTIONS = {
     "ko": "🇰🇷 Korea", "ar": "🇸🇦 Arab",
 }
 
+# TTL kamus — berapa detik sebelum reload otomatis dari Google Sheet
+_KAMUS_TTL = 1   # 1 detik
+
 # --- HELPER FUNGSI ---
 def _parse_doc_structure(docx_path: str) -> list:
     """Parsing dokumen menjadi daftar section: [{heading, level, paragraphs}]"""
@@ -654,25 +657,46 @@ def load_engines():
 
 engine2, engine4, engine5, engine6, engine7 = load_engines()
 
-# --- AUTO-LOAD KAMUS + ITALIC ---
-@st.cache_resource(show_spinner=False)
+# ─────────────────────────────────────────────────────────────────────────────
+# SOLUSI 1: LOAD KAMUS DENGAN cache_data + TTL
+# Berbeda dengan cache_resource, cache_data akan expire setelah TTL detik
+# sehingga otomatis reload dari Google Sheet tanpa perlu restart server.
+# ─────────────────────────────────────────────────────────────────────────────
+
+@st.cache_data(ttl=_KAMUS_TTL, show_spinner=False)
 def _load_kamus_from_sheet():
+    """
+    Load kamus dari Google Sheet.
+    Otomatis di-refresh setiap _KAMUS_TTL detik (default 1 detik = 1 detik).
+    """
     d = CustomDictionary()
     count_kamus = d.load_defaults()
     i = ItalicDictionary()
     count_italic = i.load_defaults()
     return d, count_kamus, i, count_italic
 
-if 'custom_dict' not in st.session_state:
-    _d, _n, _i, _ni = _load_kamus_from_sheet()
-    st.session_state['custom_dict'] = _d
-    st.session_state['kamus_count'] = _n
-    st.session_state['italic_dict'] = _i
-    st.session_state['italic_count'] = _ni
+# Reload kamus ke session_state jika:
+#   (a) belum pernah load, ATAU
+#   (b) sudah lebih dari _KAMUS_TTL detik sejak load terakhir
+_needs_reload = (
+    'custom_dict' not in st.session_state or
+    time.time() - st.session_state.get('_kamus_loaded_at', 0) > _KAMUS_TTL
+)
 
+if _needs_reload:
+    _d, _n, _i, _ni = _load_kamus_from_sheet()
+    st.session_state['custom_dict']    = _d
+    st.session_state['kamus_count']    = _n
+    st.session_state['italic_dict']    = _i
+    st.session_state['italic_count']   = _ni
+    st.session_state['_kamus_loaded_at'] = time.time()
+
+# Ambil nilai untuk ditampilkan di header
 _kamus = st.session_state.get('custom_dict')
-_count = len(_kamus) if _kamus else 0
+_count = st.session_state.get('kamus_count', 0)
 _italic_count = st.session_state.get('italic_count', 0)
+
+# ─────────────────────────────────────────────────────────────────────────────
 
 # --- HALAMAN UTAMA ---
 
@@ -1020,7 +1044,6 @@ def _local_answer(query: str, sections: list, history: list) -> str:
 
     # Definisi / jelaskan istilah
     if is_definition:
-        # Ekstrak kata kunci utama dari pertanyaan (buang stop words)
         stop = {'apa','itu','yang','dimaksud','definisi','pengertian','artinya',
                 'maksudnya','jelaskan','dengan','dari','dan','di','ke','adalah'}
         kws = [w for w in words if w not in stop and len(w) > 2]
@@ -1030,7 +1053,6 @@ def _local_answer(query: str, sections: list, history: list) -> str:
             if best:
                 results = []
                 for s in best:
-                    # Cari paragraf spesifik yang mengandung kata kunci
                     relevant_paras = [p for p in s['paragraphs']
                                       if any(k in p.lower() for k in kws)][:3]
                     body = " ".join(relevant_paras) if relevant_paras else _section_text(s, 500)
@@ -1093,7 +1115,7 @@ def _claude_chat(system: str, messages: list) -> str:
     """Kirim chat ke Z.ai API (GLM), return teks jawaban."""
     import urllib.request, json
 
-    ZAI_API_KEY = "bd7f64d4e11642599ca8d1772e89521c.imnp62IRucfcV4bA"   # ← ganti dengan API key Z.ai kamu
+    ZAI_API_KEY = "bd7f64d4e11642599ca8d1772e89521c.imnp62IRucfcV4bA"
 
     all_messages = [{"role": "system", "content": system}] + messages
 
@@ -1122,12 +1144,10 @@ def _claude_chat(system: str, messages: list) -> str:
 
 # ── TAMPILAN CHAT — selalu tampil di dashboard ────────────────────────────────
 
-# Parse dokumen — selalu refresh jika ada file hasil tapi sections masih kosong
 _src = st.session_state.get('_final_tr_file') or st.session_state.get('_final_opt_file')
 _cached_sections = st.session_state.get('_doc_sections', [])
 
 if _src and os.path.exists(_src) and len(_cached_sections) == 0:
-    # Ada file baru tapi belum diparsing — parse sekarang
     st.session_state['_doc_sections'] = _parse_doc_structure(_src)
 elif '_doc_sections' not in st.session_state:
     st.session_state['_doc_sections'] = []
@@ -1139,7 +1159,6 @@ has_doc  = n_sec > 0
 
 st.divider()
 
-# ── Asisten AI — smooth expand/collapse via st.expander ───────────────────
 import streamlit.components.v1 as _components
 
 _exp_label = (
@@ -1148,10 +1167,8 @@ _exp_label = (
     "🤖 Asisten AI  ·  Tanya seputar Draft RSNI"
 )
 
-# Inject CSS khusus expander AI tepat sebelum render
 st.markdown("""
 <style>
-/* Wrapper expander */
 div[data-testid="stExpander"] {
     border: 1.5px solid rgba(99,102,241,0.6) !important;
     border-radius: 14px !important;
@@ -1159,7 +1176,6 @@ div[data-testid="stExpander"] {
     box-shadow: 0 4px 24px rgba(99,102,241,0.3) !important;
     background: rgba(20,18,50,0.55) !important;
 }
-/* Header tombol */
 div[data-testid="stExpander"] summary {
     background: linear-gradient(135deg, #6366f1 0%, #4f46e5 50%, #4338ca 100%) !important;
     padding: 0.82rem 1.2rem !important;
@@ -1170,14 +1186,12 @@ div[data-testid="stExpander"] summary:hover {
     background: linear-gradient(135deg, #818cf8 0%, #6366f1 50%, #4f46e5 100%) !important;
     box-shadow: 0 6px 22px rgba(99,102,241,0.6) !important;
 }
-/* Teks dalam header */
 div[data-testid="stExpander"] summary span,
 div[data-testid="stExpander"] summary p,
 div[data-testid="stExpander"] summary div {
     color: #fff !important;
     font-weight: 700 !important;
 }
-/* Ikon panah */
 div[data-testid="stExpander"] summary svg {
     stroke: #fff !important;
     color: #fff !important;
@@ -1187,7 +1201,6 @@ div[data-testid="stExpander"] summary svg {
 
 with st.expander(_exp_label, expanded=True):
 
-    # Badge status
     doc_badge = (
         f"<span style='background:rgba(16,185,129,0.12);border:1px solid rgba(16,185,129,0.3);"
         f"color:#6ee7b7;font-size:0.75rem;padding:0.2rem 0.7rem;border-radius:99px;'>"
@@ -1285,7 +1298,7 @@ with st.expander(_exp_label, expanded=True):
 </script>
 """, height=52)
 
-    # TTS helper — teks disimpan di hidden element, bukan inline onclick
+    # TTS helper
     def _tts_html(text: str, btn_id: str) -> str:
         import base64
         b64 = base64.b64encode(text[:3000].encode('utf-8')).decode('ascii')
@@ -1301,7 +1314,6 @@ with st.expander(_exp_label, expanded=True):
       var txt = decodeURIComponent(escape(atob(raw)));
       var btn = document.getElementById('btn_speak_{btn_id}');
 
-      // Ambil pilihan suara & kecepatan dari selector di frame induk
       var voiceName = '';
       var rate = 0.92;
       try {{
@@ -1311,7 +1323,6 @@ with st.expander(_exp_label, expanded=True):
         if(vSel) voiceName = vSel.value;
         if(rSel) rate = parseFloat(rSel.value) || 0.92;
       }} catch(e) {{
-        // fallback: coba localStorage
         try{{ voiceName = localStorage.getItem('tts_voice') || ''; }}catch(e2){{}}
       }}
 
@@ -1322,7 +1333,6 @@ with st.expander(_exp_label, expanded=True):
       if(!chosenVoice) chosenVoice = voices.find(function(v){{return v.lang.startsWith('ms');}});
       if(!chosenVoice) chosenVoice = voices.find(function(v){{return v.lang.startsWith('en');}});
 
-      // Pecah per kalimat agar tidak terpotong browser
       var sentences = txt.match(/[^.!?\\n]{{1,220}}[.!?\\n]?/g) || [txt];
       btn.textContent = '⏳ Membaca...';
       btn.style.borderColor = 'rgba(16,185,129,0.6)';
@@ -1390,13 +1400,10 @@ with st.expander(_exp_label, expanded=True):
                 _components.html(_tts_html(_clean, f"hist_{idx}"), height=44)
 
     # ── Voice Input ─────────────────────────────────────────────────────────
-    # Strategi: inject tombol ke parent DOM (dalam chat input bar).
-    # Fallback: tombol fixed di iframe jika parent DOM tidak bisa diakses.
     _components.html("""
 <style>
-/* ── Fallback button (tampil hanya jika inject parent gagal) ── */
 #mic-fixed-btn {
-  display: none;                       /* tersembunyi by default */
+  display: none;
   position: fixed;
   bottom: 14px;
   right: calc(50% - 375px);
@@ -1442,13 +1449,11 @@ with st.expander(_exp_label, expanded=True):
   if (!window._mic) window._mic = { rec: null, listening: false, timer: null };
   var M = window._mic;
 
-  /* ── Referensi tombol & toast aktif (bisa fallback atau parent) ── */
   var fbBtn   = document.getElementById('mic-fixed-btn');
   var fbToast = document.getElementById('mic-toast-local');
   var activeBtn   = fbBtn;
   var activeToast = fbToast;
 
-  /* ── Toast ── */
   function showToast(msg, ms) {
     activeToast.textContent = msg;
     activeToast.style.display = 'block';
@@ -1456,7 +1461,6 @@ with st.expander(_exp_label, expanded=True):
     if (ms) M.timer = setTimeout(function(){ activeToast.style.display='none'; }, ms);
   }
 
-  /* ── State tombol ── */
   function resetBtn() {
     activeBtn.innerHTML = '🎤 Bicara';
     activeBtn.classList.remove('listening');
@@ -1466,7 +1470,6 @@ with st.expander(_exp_label, expanded=True):
     M.listening = false; resetBtn();
   }
 
-  /* ── Kirim teks ke textarea Streamlit ── */
   function sendToChat(txt) {
     var sent = false;
     var targets = [];
@@ -1497,7 +1500,6 @@ with st.expander(_exp_label, expanded=True):
     }
   }
 
-  /* ── Logika mic utama ── */
   window.toggleMic = function() {
     if (M.listening) { forceStop(); showToast('⏹ Dihentikan', 1500); return; }
     var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -1536,13 +1538,11 @@ with st.expander(_exp_label, expanded=True):
     rec.start();
   };
 
-  /* ── Inject tombol ke parent DOM (dalam bar chat input Streamlit) ── */
   function setupParentBtn() {
     try {
       var pw = window.parent;
       if (pw === window) throw new Error('no parent');
 
-      /* -- CSS ke parent sekali saja -- */
       if (!pw.document.getElementById('_mic_style')) {
         var s = pw.document.createElement('style');
         s.id = '_mic_style';
@@ -1570,7 +1570,6 @@ with st.expander(_exp_label, expanded=True):
         pw.document.head.appendChild(s);
       }
 
-      /* -- Toast ke body -- */
       if (!pw.document.getElementById('_mic_toast')) {
         var t = pw.document.createElement('div');
         t.id = '_mic_toast';
@@ -1578,19 +1577,17 @@ with st.expander(_exp_label, expanded=True):
       }
       activeToast = pw.document.getElementById('_mic_toast');
 
-      /* -- Fungsi inject/re-inject tombol -- */
       function doInject() {
         var chatInput = pw.document.querySelector('div[data-testid="stChatInput"]');
         if (!chatInput) return false;
         var existing = pw.document.getElementById('_mic_btn');
         if (existing && chatInput.contains(existing)) {
-          /* tombol sudah ada dan masih di tempat yang benar */
           activeBtn = existing;
           existing.onclick = function(e){ e.preventDefault(); window.toggleMic(); };
           fbBtn.style.display = 'none';
           return true;
         }
-        if (existing) existing.remove();   /* ada tapi di luar chatInput, hapus */
+        if (existing) existing.remove();
         var btn = pw.document.createElement('button');
         btn.id   = '_mic_btn';
         btn.type = 'button';
@@ -1602,19 +1599,15 @@ with st.expander(_exp_label, expanded=True):
         return true;
       }
 
-      /* Coba inject sekarang */
       if (!doInject()) {
-        /* Chat input belum ada — pakai MutationObserver di parent */
         var obs = new pw.MutationObserver(function(){ doInject(); });
         obs.observe(pw.document.body, { childList:true, subtree:true });
       } else {
-        /* Sudah inject, pasang observer untuk bertahan saat Streamlit rerender */
         var obs2 = new pw.MutationObserver(function(){ doInject(); });
         obs2.observe(pw.document.body, { childList:true, subtree:true });
       }
 
     } catch(e) {
-      /* Akses parent gagal — tampilkan fallback button di iframe */
       fbBtn.style.display = 'flex';
     }
   }
@@ -1625,9 +1618,7 @@ with st.expander(_exp_label, expanded=True):
 """, height=56)
 
     # Input teks
-    user_input = st.chat_input(
-        "Tanya seputar isi dokumen RSNI..."
-    )
+    user_input = st.chat_input("Tanya seputar isi dokumen RSNI...")
 
     if user_input:
         st.session_state['_chat_history'].append({'role': 'user', 'content': user_input})
