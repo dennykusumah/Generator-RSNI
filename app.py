@@ -1674,9 +1674,9 @@ st.markdown(
     f"<div class='footer'>"
     f"© 2026 <span>ISO to RSNI Converter</span> · Generator RSNI · All rights reserved."
     f"<br><span style='font-size:0.72rem;opacity:0.8;'>"
-    f"<a href='https://bit.ly/kamusSNI' target='_blank' style='color:#ffffff;text-decoration:none;'>📖 Kamus SNI</a>"
+    f"<a href='https://docs.google.com/spreadsheets/d/1BBPCMPwvbBk5LPdoDQwnjQzcPHv7_RDKENqeMsklF-8/edit?usp=sharing' target='_blank' style='color:#ffffff;text-decoration:none;'>📖 Kamus SNI</a>"
     f"&nbsp;&nbsp;·&nbsp;&nbsp;"
-    f"<a href='https://docs.google.com/spreadsheets/d/1NZm1HjsjxmflxnZlzV_O2XF75ZlMUOu8VVofsKfp_FA/edit?usp=sharing target='_blank' style='color:#ffffff;text-decoration:none;'>🌐 Kamus Istilah Asing</a>"
+    f"<a href='https://docs.google.com/spreadsheets/d/1NZm1HjsjxmflxnZlzV_O2XF75ZlMUOu8VVofsKfp_FA/edit?usp=sharing; target='_blank' style='color:#ffffff;text-decoration:none;'>🌐 Kamus Istilah Asing</a>"
     f"</span>"
     f"</div>",
     unsafe_allow_html=True
