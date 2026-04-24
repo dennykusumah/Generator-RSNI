@@ -3,6 +3,10 @@ Engine2: DocxOptimizerEngine - Updated Version
 ===============================================
 Engine untuk merapikan dokumen Word sesuai standar ISO/SNI
 Digunakan oleh app.py untuk menu "2. Rapikan (Word -> ISO Std)"
+
+REVISI: Fix iso_year extraction - tahun diambil dari 4 digit setelah ':' pada nomor SNI
+        Contoh: "SNI ISO 9828-1:2025" → iso_year = "2025"
+        Juga fix copyright text di text box/shape menggunakan find-replace pada XML body
 """
 
 import re
@@ -71,6 +75,41 @@ def set_document_margins(doc, top_cm=3, inside_cm=3, bottom_cm=2, outside_cm=2):
         section.bottom_margin = Cm(bottom_cm)
         section.left_margin = Cm(inside_cm)
         section.right_margin = Cm(outside_cm)
+
+
+def fix_copyright_in_shapes(doc, iso_year):
+    """
+    Fix teks copyright di dalam text box / shape (txbxContent).
+    Mengganti tahun ISO yang salah dengan iso_year yang benar.
+    Dipanggil setelah Document dibuka, sebelum save.
+
+    Pola yang dicari (case-insensitive):
+        © ISO <tahun_lama> – All rights reserved
+        © BSN <tahun_lama> untuk kepentingan ...
+    Tahun lama = 4 digit angka yang berbeda dari iso_year.
+    """
+    if not iso_year:
+        return
+
+    from lxml import etree
+    W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+
+    # Iterasi seluruh elemen <w:t> di body (mencakup text box)
+    body = doc.element.body
+    for t_el in body.iter(f'{{{W}}}t'):
+        if t_el.text:
+            original = t_el.text
+            # Ganti tahun di "© ISO XXXX" dan "© BSN XXXX"
+            # Pattern: © (ISO|BSN) diikuti spasi dan 4 digit tahun
+            new_text = re.sub(
+                r'(©\s*(?:ISO|BSN)\s+)(\d{4})',
+                lambda m: m.group(1) + iso_year,
+                original,
+                flags=re.IGNORECASE
+            )
+            if new_text != original:
+                t_el.text = new_text
+
 
 #headerfooter
 def setup_headers_footers(doc, doc_title="SNI ISO XXXXX:2025", copyright_text="©BSN 2025"):
@@ -242,6 +281,36 @@ def setup_headers_footers(doc, doc_title="SNI ISO XXXXX:2025", copyright_text="�
         build_footer(section.even_page_footer)
 
 
+def _extract_iso_year(doc_title):
+    """
+    Ekstrak 4 digit tahun dari nomor SNI/ISO.
+
+    Urutan prioritas pencarian:
+    1. Pola ':YYYY' — paling umum, e.g. "SNI ISO 9828-1:2025"
+    2. Pola '/YYYY' — varian beberapa nomor SNI
+    3. Pola '-YYYY' — fallback terakhir (hati-hati, bisa salah ambil)
+
+    Return: string 4 digit (e.g. "2025") atau None jika tidak ditemukan.
+    """
+    if not doc_title:
+        return None
+
+    # Prioritas 1: colon separator (paling umum)
+    m = re.search(r':(\d{4})\b', doc_title)
+    if m:
+        return m.group(1)
+
+    # Prioritas 2: slash separator
+    m = re.search(r'/(\d{4})\b', doc_title)
+    if m:
+        return m.group(1)
+
+    # Prioritas 3: dash separator — ambil digit 4 karakter yang dimulai 19xx atau 20xx
+    m = re.search(r'[–\-]((19|20)\d{2})\b', doc_title)
+    if m:
+        return m.group(1)
+
+    return None
 
 
 class DocxOptimizerEngine:
@@ -261,14 +330,30 @@ class DocxOptimizerEngine:
             font_name: Font name (default: Arial)
             font_size: Font size (default: 11)
             enable_headers: Enable header/footer setup (default: False)
-            doc_title: Document title for header
-            copyright_text: Copyright text for footer
+            doc_title: Document title for header (e.g. "SNI ISO 9828-1:2025")
+            copyright_text: Copyright text for footer (akan di-override oleh iso_year jika ditemukan)
             
         Returns:
             (success: bool, message: str)
         """
         try:
             doc = Document(input_path)
+
+            # ----------------------------------------------------------------
+            # EKSTRAK iso_year LEBIH AWAL (sebelum proses apapun)
+            # sehingga tersedia untuk fix_copyright_in_shapes dan header/footer
+            # ----------------------------------------------------------------
+            iso_year = _extract_iso_year(doc_title)
+
+            # Override copyright_text dengan tahun yang benar dari nomor SNI
+            if iso_year:
+                copyright_text = f"©BSN {iso_year}"
+
+            # ----------------------------------------------------------------
+            # FIX TEKS COPYRIGHT DI TEXT BOX / SHAPE
+            # (paragraf biasa akan dihapus oleh re_copyright di bawah)
+            # ----------------------------------------------------------------
+            fix_copyright_in_shapes(doc, iso_year)
 
             # Hapus semua hyperlink → jadikan teks biasa
             remove_all_hyperlinks(doc)
@@ -867,16 +952,9 @@ class DocxOptimizerEngine:
 
             # Setup headers/footers (jika diminta)
             if enable_headers and doc_title:
-                # Ekstrak iso_year: 4 digit setelah tanda ':' dari nomor SNI
-                iso_year_match = re.search(r':(\d{4})', doc_title)
-                iso_year = iso_year_match.group(1) if iso_year_match else None
-
-                # Gunakan iso_year untuk copyright_text jika ditemukan
-                if iso_year:
-                    copyright_text = f"©BSN {iso_year}"
-
+                # iso_year & copyright_text sudah dihitung di awal fungsi process()
+                # Langsung gunakan nilai yang sudah benar
                 setup_headers_footers(doc, doc_title, copyright_text)
-
 
             doc.save(output_path)
             return True, output_path
