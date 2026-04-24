@@ -772,7 +772,7 @@ class CoverPageEngine:
             # ── Build halaman hak cipta (page 2 dari section cover)
             copyright_content = build_copyright_body_xml(
                 bsn_year=bsn_year,
-                iso_year=iso_year if iso_year else bsn_year,
+                iso_year=iso_year,
                 city=copyright_city
             )
 
