@@ -718,10 +718,10 @@ class CoverPageEngine:
                 ref_standard = sni_number.replace("SNI ", "", 1) + ", IDT"
 
             # ── AUTO-EXTRACT: Ambil tahun ISO dari sni_number jika iso_year masih default ──
-            if iso_year == "20XX":
-                year_match = re.search(r':(\d{4})', sni_number)
-                if year_match:
-                    iso_year = year_match.group(1)
+          #  if iso_year == "20XX":
+           #     year_match = re.search(r':(\d{4})', sni_number)
+           #     if year_match:
+           #         iso_year = year_match.group(1)
 
             # Load logos
             sni_bytes = self._load_file(self.sni_logo_path)
