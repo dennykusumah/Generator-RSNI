@@ -4,9 +4,11 @@ Engine2: DocxOptimizerEngine - Updated Version
 Engine untuk merapikan dokumen Word sesuai standar ISO/SNI
 Digunakan oleh app.py untuk menu "2. Rapikan (Word -> ISO Std)"
 
-REVISI: Fix iso_year extraction - tahun diambil dari 4 digit setelah ':' pada nomor SNI
-        Contoh: "SNI ISO 9828-1:2025" → iso_year = "2025"
-        Juga fix copyright text di text box/shape menggunakan find-replace pada XML body
+REVISI 2: Fix copyright di text box (txbxContent) yang teks-nya tersebar di multiple runs.
+          - fix_copyright_in_shapes kini scan doc.element (root XML) bukan hanya body
+          - PASS 1: replace per <w:t> untuk single-run sederhana
+          - PASS 2: gabungkan teks antar run, petakan posisi digit → replace split-run
+          - _extract_iso_year: ekstrak tahun dari ':YYYY', '/YYYY', atau '-YYYY'
 """
 
 import re
@@ -79,14 +81,15 @@ def set_document_margins(doc, top_cm=3, inside_cm=3, bottom_cm=2, outside_cm=2):
 
 def fix_copyright_in_shapes(doc, iso_year):
     """
-    Fix teks copyright di dalam text box / shape (txbxContent).
-    Mengganti tahun ISO yang salah dengan iso_year yang benar.
-    Dipanggil setelah Document dibuka, sebelum save.
+    Fix teks copyright di dalam text box / shape (txbxContent) maupun paragraf biasa.
 
-    Pola yang dicari (case-insensitive):
-        © ISO <tahun_lama> – All rights reserved
-        © BSN <tahun_lama> untuk kepentingan ...
-    Tahun lama = 4 digit angka yang berbeda dari iso_year.
+    Strategi:
+    1. Iterasi SELURUH dokumen XML (bukan hanya body) — mencakup txbxContent, header, footer, dll.
+    2. Untuk setiap paragraf <w:p>, gabungkan teks dari semua run → cari tahun 4 digit →
+       tentukan apakah ada pola "ISO XXXX" atau "BSN XXXX" → ganti tahun di run yang tepat.
+    3. Juga replace langsung di tiap <w:t> untuk kasus single-run yang lebih sederhana.
+
+    Dipanggil sebelum proses formatting utama.
     """
     if not iso_year:
         return
@@ -94,21 +97,95 @@ def fix_copyright_in_shapes(doc, iso_year):
     from lxml import etree
     W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
 
-    # Iterasi seluruh elemen <w:t> di body (mencakup text box)
-    body = doc.element.body
-    for t_el in body.iter(f'{{{W}}}t'):
-        if t_el.text:
-            original = t_el.text
-            # Ganti tahun di "© ISO XXXX" dan "© BSN XXXX"
-            # Pattern: © (ISO|BSN) diikuti spasi dan 4 digit tahun
-            new_text = re.sub(
-                r'(©\s*(?:ISO|BSN)\s+)(\d{4})',
-                lambda m: m.group(1) + iso_year,
-                original,
-                flags=re.IGNORECASE
-            )
-            if new_text != original:
-                t_el.text = new_text
+    # ---------------------------------------------------------------
+    # PASS 1: Replace langsung di tiap <w:t> — menangani single-run
+    # ---------------------------------------------------------------
+    # Scope: seluruh XML element tree dokumen (doc.element = root <w:document>)
+    root = doc.element
+    for t_el in root.iter(f'{{{W}}}t'):
+        if not t_el.text:
+            continue
+        original = t_el.text
+        new_text = re.sub(
+            r'(©\s*(?:ISO|BSN)\s+)(\d{4})',
+            lambda m: m.group(1) + iso_year,
+            original,
+            flags=re.IGNORECASE
+        )
+        if new_text != original:
+            t_el.text = new_text
+
+    # ---------------------------------------------------------------
+    # PASS 2: Gabungkan teks antar run dalam satu paragraf
+    # Menangani kasus teks "© ISO " dan "2026" berada di run berbeda
+    # ---------------------------------------------------------------
+    for p_el in root.iter(f'{{{W}}}p'):
+        runs = p_el.findall(f'.//{{{W}}}r')
+        if not runs:
+            continue
+
+        # Kumpulkan semua (run_element, t_element, text) secara berurutan
+        run_texts = []
+        for r_el in runs:
+            for t_el in r_el.findall(f'{{{W}}}t'):
+                run_texts.append((r_el, t_el, t_el.text or ''))
+
+        if not run_texts:
+            continue
+
+        # Gabungkan teks dari semua run
+        full_text = ''.join(item[2] for item in run_texts)
+
+        # Cek apakah ada pola tahun yang perlu diganti
+        # Pattern: (© ISO | © BSN) diikuti TAHUN 4 DIGIT (boleh di run berbeda)
+        # Kita cari posisi digit 4 karakter yang terletak setelah "ISO " atau "BSN "
+        pattern = re.compile(
+            r'(©\s*(?:ISO|BSN)\s+)(\d{4})',
+            re.IGNORECASE
+        )
+        match = pattern.search(full_text)
+        if not match:
+            continue
+
+        # Cek apakah tahun sudah benar
+        found_year = match.group(2)
+        if found_year == iso_year:
+            continue
+
+        # Hitung posisi karakter digit dalam full_text
+        year_start = match.start(2)   # posisi karakter pertama digit di full_text
+        year_end   = match.end(2)     # posisi setelah digit terakhir
+
+        # Petakan posisi ke run/t_el
+        # Iterasi run_texts, hitung offset kumulatif
+        cursor = 0
+        for (r_el, t_el, txt) in run_texts:
+            t_start = cursor
+            t_end   = cursor + len(txt)
+
+            # Apakah sebagian dari [year_start, year_end] ada di run ini?
+            overlap_start = max(year_start, t_start)
+            overlap_end   = min(year_end,   t_end)
+
+            if overlap_start < overlap_end:
+                # Ada overlap — ganti bagian digit di run ini
+                local_start = overlap_start - t_start
+                local_end   = overlap_end   - t_start
+
+                # Ganti digit yang overlap dengan iso_year (proporsional)
+                # Biasanya seluruh "XXXX" ada di satu run, tapi handle split juga
+                digits_in_this_run = txt[local_start:local_end]
+                # Posisi dalam iso_year yang sesuai dengan overlap ini
+                iso_offset = overlap_start - year_start
+                replacement = iso_year[iso_offset: iso_offset + len(digits_in_this_run)]
+
+                new_txt = txt[:local_start] + replacement + txt[local_end:]
+                if new_txt != txt:
+                    t_el.text = new_txt
+
+            cursor = t_end
+            if cursor >= year_end:
+                break
 
 
 #headerfooter
