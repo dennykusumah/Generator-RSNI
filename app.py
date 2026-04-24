@@ -731,7 +731,7 @@ st.markdown(f"""
             <div class="stat-divider"></div>
             <div class="stat-item">
                 <div class="stat-num">{_italic_count if _italic_count > 0 else '—'}</div>
-                <div class="stat-lbl">Istilah Asing</div>
+                <div class="stat-lbl">Kamus Istilah Asing</div>
             </div>
             <div class="stat-divider"></div>
             <div class="stat-item">
