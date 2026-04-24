@@ -72,110 +72,6 @@ def set_document_margins(doc, top_cm=3, inside_cm=3, bottom_cm=2, outside_cm=2):
         section.left_margin = Cm(inside_cm)
         section.right_margin = Cm(outside_cm)
 
-def _extract_iso_year(doc_title):
-    """
-    Ekstrak 4 digit tahun dari nomor SNI yang diinput user.
-    Contoh: "SNI ISO 9828-1:2025" → "2025"
-
-    Prioritas pencarian:
-      1. Pola ':YYYY'  — paling umum, e.g. "SNI ISO 9828-1:2025"
-      2. Pola '/YYYY'  — varian beberapa nomor SNI
-    Return: string 4 digit (e.g. "2025") atau None jika tidak ditemukan.
-    """
-    if not doc_title:
-        return None
-    m = re.search(r':(\d{4})\b', doc_title)
-    if m:
-        return m.group(1)
-    m = re.search(r'/(\d{4})\b', doc_title)
-    if m:
-        return m.group(1)
-    return None
-
-
-def fix_copyright_in_shapes(doc, iso_year):
-    """
-    Ganti tahun di teks '© ISO XXXX' di seluruh dokumen (termasuk text box/shape).
-
-    Hanya menarget pola '© ISO XXXX' — TIDAK menyentuh '© BSN XXXX'
-    supaya copyright footer dari app.py (tahun laptop) tetap utuh.
-
-    Strategi dua pass:
-      PASS 1 — replace per <w:t> untuk teks single-run.
-      PASS 2 — gabungkan teks antar run dalam satu paragraf untuk menangani
-               kasus '© ISO ' dan '2026' berada di run yang berbeda (split run).
-    """
-    if not iso_year:
-        return
-
-    W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
-    root = doc.element   # seluruh XML dokumen, mencakup body + text box
-
-    # ------------------------------------------------------------------
-    # PASS 1: replace langsung di tiap <w:t> (single-run sederhana)
-    # Hanya pola '© ISO XXXX', bukan '© BSN XXXX'
-    # ------------------------------------------------------------------
-    for t_el in root.iter(f'{{{W}}}t'):
-        if not t_el.text:
-            continue
-        new_text = re.sub(
-            r'(©\s*ISO\s+)(\d{4})',
-            lambda m: m.group(1) + iso_year,
-            t_el.text,
-            flags=re.IGNORECASE
-        )
-        if new_text != t_el.text:
-            t_el.text = new_text
-
-    # ------------------------------------------------------------------
-    # PASS 2: tangani split-run — '© ISO ' di satu run, '2026' di run lain
-    # ------------------------------------------------------------------
-    for p_el in root.iter(f'{{{W}}}p'):
-        runs = p_el.findall(f'.//{{{W}}}r')
-        if not runs:
-            continue
-
-        # Kumpulkan (r_el, t_el, text) berurutan
-        run_texts = []
-        for r_el in runs:
-            for t_el in r_el.findall(f'{{{W}}}t'):
-                run_texts.append((r_el, t_el, t_el.text or ''))
-
-        if not run_texts:
-            continue
-
-        full_text = ''.join(item[2] for item in run_texts)
-
-        # Cari '© ISO XXXX' dalam teks gabungan
-        match = re.search(r'(©\s*ISO\s+)(\d{4})', full_text, re.IGNORECASE)
-        if not match:
-            continue
-        if match.group(2) == iso_year:
-            continue  # sudah benar, lewati
-
-        year_start = match.start(2)
-        year_end   = match.end(2)
-
-        # Petakan posisi digit ke run/t_el yang sesuai
-        cursor = 0
-        for (r_el, t_el, txt) in run_texts:
-            t_start = cursor
-            t_end   = cursor + len(txt)
-            overlap_start = max(year_start, t_start)
-            overlap_end   = min(year_end,   t_end)
-            if overlap_start < overlap_end:
-                local_start  = overlap_start - t_start
-                local_end    = overlap_end   - t_start
-                iso_offset   = overlap_start - year_start
-                replacement  = iso_year[iso_offset: iso_offset + (local_end - local_start)]
-                new_txt = txt[:local_start] + replacement + txt[local_end:]
-                if new_txt != txt:
-                    t_el.text = new_txt
-            cursor = t_end
-            if cursor >= year_end:
-                break
-
-
 #headerfooter
 def setup_headers_footers(doc, doc_title="SNI ISO XXXXX:2025", copyright_text="©BSN 2025"):
 
@@ -348,6 +244,34 @@ def setup_headers_footers(doc, doc_title="SNI ISO XXXXX:2025", copyright_text="�
 
 
 
+def _extract_year_from_sni(sni_number):
+    """
+    Ekstrak 4 digit tahun dari nomor SNI.
+    Contoh: "SNI ISO 9828-1:2025" → "2025"
+    Contoh: "SNI ISO 9828-1;2025" → "2025"
+    Contoh: "2025" → "2025"
+    
+    Returns:
+        str: 4 digit tahun, atau None jika tidak ditemukan
+    """
+    if not sni_number:
+        return None
+    
+    # Coba pola dengan : atau ; sebagai pemisah tahun
+    match = re.search(r'[:;]\s*(\d{4})\s*$', sni_number.strip())
+    if match:
+        return match.group(1)
+    
+    # Coba 4 digit terakhir jika merupakan tahun yang valid (1900-2099)
+    last_four = sni_number.strip()[-4:]
+    if last_four.isdigit():
+        year = int(last_four)
+        if 1900 <= year <= 2099:
+            return last_four
+    
+    return None
+
+
 class DocxOptimizerEngine:
     """
     Engine untuk optimasi dokumen Word sesuai standar ISO/SNI
@@ -355,7 +279,8 @@ class DocxOptimizerEngine:
     """
     
     def process(self, input_path, output_path, font_name="Arial", font_size=11,
-                enable_headers=False, doc_title="", copyright_text="©BSN 2025"):
+                enable_headers=False, doc_title="", copyright_text="©BSN 2025",
+                sni_number=None):
         """
         Process dokumen Word untuk formatting ISO/SNI
         
@@ -366,21 +291,27 @@ class DocxOptimizerEngine:
             font_size: Font size (default: 11)
             enable_headers: Enable header/footer setup (default: False)
             doc_title: Document title for header
-            copyright_text: Copyright text for footer
+            copyright_text: Copyright text for footer (mendukung placeholder {iso_year})
+            sni_number: Nomor SNI untuk mengekstrak tahun (opsional)
             
         Returns:
             (success: bool, message: str)
         """
         try:
-            doc = Document(input_path)
+            # =====================================================
+            # EKSTRAK TAHUN DARI SNI NUMBER
+            # =====================================================
+            iso_year = _extract_year_from_sni(sni_number) if sni_number else None
+            
+            # Ganti placeholder {iso_year} di copyright_text jika ada
+            if iso_year and '{iso_year}' in copyright_text:
+                copyright_text = copyright_text.replace('{iso_year}', iso_year)
+            elif iso_year and '©BSN' in copyright_text:
+                # Jika copyright_text default dan ada tahun yang diekstrak, ganti tahunnya
+                # Pola: ©BSN XXXX → ganti XXXX dengan tahun dari SNI
+                copyright_text = re.sub(r'(©BSN\s*)\d{4}', rf'\g<1>{iso_year}', copyright_text)
 
-            # ------------------------------------------------------------------
-            # EKSTRAK iso_year DARI NOMOR SNI (input user)
-            # Dipakai HANYA untuk mengganti '© ISO XXXX' di text box/shape.
-            # copyright_text (footer ©BSN) tetap dari app.py — tidak diubah.
-            # ------------------------------------------------------------------
-            iso_year = _extract_iso_year(doc_title)
-            fix_copyright_in_shapes(doc, iso_year)
+            doc = Document(input_path)
 
             # Hapus semua hyperlink → jadikan teks biasa
             remove_all_hyperlinks(doc)
