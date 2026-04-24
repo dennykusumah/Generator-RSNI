@@ -867,6 +867,14 @@ class DocxOptimizerEngine:
 
             # Setup headers/footers (jika diminta)
             if enable_headers and doc_title:
+                # Ekstrak iso_year: 4 digit setelah tanda ':' dari nomor SNI
+                iso_year_match = re.search(r':(\d{4})', doc_title)
+                iso_year = iso_year_match.group(1) if iso_year_match else None
+
+                # Gunakan iso_year untuk copyright_text jika ditemukan
+                if iso_year:
+                    copyright_text = f"©BSN {iso_year}"
+
                 setup_headers_footers(doc, doc_title, copyright_text)
 
 
