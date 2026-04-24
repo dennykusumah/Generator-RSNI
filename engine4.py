@@ -22,44 +22,6 @@ import zipfile
 
 
 # ──────────────────────────────────────────────────────────
-# YEAR EXTRACTION HELPER
-# ──────────────────────────────────────────────────────────
-
-def _extract_year_from_sni(sni_number):
-    """
-    Ekstrak 4 digit tahun dari nomor SNI.
-    
-    Contoh:
-        "SNI ISO 9828-1:2025" → "2025"
-        "SNI ISO 9828-1;2025" → "2025"
-        "SNI ISO 19659-2:2020" → "2020"
-        "2025" → "2025"
-    
-    Args:
-        sni_number: String nomor SNI
-        
-    Returns:
-        str: 4 digit tahun, atau None jika tidak ditemukan
-    """
-    if not sni_number:
-        return None
-    
-    # Coba pola dengan : atau ; sebagai pemisah tahun
-    match = re.search(r'[:;]\s*(\d{4})\s*$', sni_number.strip())
-    if match:
-        return match.group(1)
-    
-    # Coba 4 digit terakhir jika merupakan tahun yang valid (1900-2099)
-    last_four = sni_number.strip()[-4:]
-    if last_four.isdigit():
-        year = int(last_four)
-        if 1900 <= year <= 2099:
-            return last_four
-    
-    return None
-
-
-# ──────────────────────────────────────────────────────────
 # UNIT CONVERSIONS
 # ──────────────────────────────────────────────────────────
 def cm_to_emu(cm):
@@ -684,8 +646,6 @@ def build_copyright_body_xml(bsn_year, iso_year, city="Jakarta"):
     )
 
     return push_spacers + bordered_table
-
-
 def make_rels_with_image(media_filename):
     return (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
@@ -717,7 +677,7 @@ class CoverPageEngine:
             input_docx="dokumen_isi.docx",
             output_docx="dengan_cover.docx",
             sni_number="SNI ISO 19659-2:2020",
-            # bsn_year dan iso_year OTOMATIS diekstrak dari sni_number jika tidak diberikan
+            bsn_year="2020",
             title_id="Judul Bahasa Indonesia",
             title_en="English Title",
             ics_number="45.060.01"
@@ -738,7 +698,7 @@ class CoverPageEngine:
         input_docx: str,
         output_docx: str,
         sni_number: str = "SNI ISO XXXXX:20XX",
-        bsn_year: str = "",
+        bsn_year: str = "20XX",
         iso_year: str = "",
         title_id: str = "",
         title_en: str = "",
@@ -749,41 +709,10 @@ class CoverPageEngine:
         """
         Prepend halaman cover SNI ke dokumen yang sudah ada.
 
-        Args:
-            input_docx: Path file input .docx
-            output_docx: Path file output .docx
-            sni_number: Nomor SNI (contoh: "SNI ISO 9828-1:2025")
-            bsn_year: Tahun BSN (jika kosong, otomatis dari sni_number)
-            iso_year: Tahun ISO (jika kosong, otomatis dari sni_number)
-            title_id: Judul bahasa Indonesia
-            title_en: Judul bahasa Inggris
-            ref_standard: Nomor standar acuan
-            ics_number: Nomor ICS
-            copyright_city: Kota penerbitan
-
         Returns:
             (True, output_path) atau (False, error_message)
         """
         try:
-            # =====================================================
-            # EKSTRAK TAHUN OTOMATIS DARI NOMOR SNI
-            # =====================================================
-            extracted_year = _extract_year_from_sni(sni_number)
-            
-            # Tentukan bsn_year: prioritas manual > ekstrak otomatis > default
-            if not bsn_year:
-                bsn_year = extracted_year if extracted_year else "20XX"
-            
-            # Tentukan iso_year: prioritas manual > ekstrak otomatis > fallback ke bsn_year
-            if not iso_year:
-                iso_year = extracted_year if extracted_year else bsn_year
-            
-            # Handle placeholder {iso_year} jika ada di input
-            if '{iso_year}' in iso_year:
-                iso_year = iso_year.replace('{iso_year}', extracted_year or bsn_year)
-            if '{iso_year}' in bsn_year:
-                bsn_year = bsn_year.replace('{iso_year}', extracted_year or "20XX")
-
             if not ref_standard:
                 ref_standard = sni_number.replace("SNI ", "", 1) + ", IDT"
 
@@ -843,7 +772,7 @@ class CoverPageEngine:
             # ── Build halaman hak cipta (page 2 dari section cover)
             copyright_content = build_copyright_body_xml(
                 bsn_year=bsn_year,
-                iso_year=iso_year,
+                iso_year=iso_year if iso_year else bsn_year,
                 city=copyright_city
             )
 
