@@ -1668,7 +1668,7 @@ def _claude_chat(system: str, messages: list) -> str:
 _now = time.strftime("%H:%M")
 st.markdown(
     f"<div class='footer'>"
-    f"© 2026 <span>ISO to RSNI Converter</span> · Generator RSNI · All rights reserved."
+    f"© 2026 ISO to RSNI Converter · Generator RSNI · All rights reserved."
     f"<br><span style='font-size:0.72rem;opacity:0.8;'>"
     f"<a href='https://docs.google.com/spreadsheets/d/1BBPCMPwvbBk5LPdoDQwnjQzcPHv7_RDKENqeMsklF-8/edit?usp=sharing' target='_blank' style='color:#ffffff;text-decoration:none;'>📖 Kamus SNI</a>"
     f"&nbsp;&nbsp;·&nbsp;&nbsp;"
