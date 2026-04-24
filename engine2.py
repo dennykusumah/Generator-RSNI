@@ -244,34 +244,6 @@ def setup_headers_footers(doc, doc_title="SNI ISO XXXXX:2025", copyright_text="�
 
 
 
-def _extract_year_from_sni(sni_number):
-    """
-    Ekstrak 4 digit tahun dari nomor SNI.
-    Contoh: "SNI ISO 9828-1:2025" → "2025"
-    Contoh: "SNI ISO 9828-1;2025" → "2025"
-    Contoh: "2025" → "2025"
-    
-    Returns:
-        str: 4 digit tahun, atau None jika tidak ditemukan
-    """
-    if not sni_number:
-        return None
-    
-    # Coba pola dengan : atau ; sebagai pemisah tahun
-    match = re.search(r'[:;]\s*(\d{4})\s*$', sni_number.strip())
-    if match:
-        return match.group(1)
-    
-    # Coba 4 digit terakhir jika merupakan tahun yang valid (1900-2099)
-    last_four = sni_number.strip()[-4:]
-    if last_four.isdigit():
-        year = int(last_four)
-        if 1900 <= year <= 2099:
-            return last_four
-    
-    return None
-
-
 class DocxOptimizerEngine:
     """
     Engine untuk optimasi dokumen Word sesuai standar ISO/SNI
@@ -279,8 +251,7 @@ class DocxOptimizerEngine:
     """
     
     def process(self, input_path, output_path, font_name="Arial", font_size=11,
-                enable_headers=False, doc_title="", copyright_text="©BSN 2025",
-                sni_number=None):
+                enable_headers=False, doc_title="", copyright_text="©BSN 2025"):
         """
         Process dokumen Word untuk formatting ISO/SNI
         
@@ -291,26 +262,12 @@ class DocxOptimizerEngine:
             font_size: Font size (default: 11)
             enable_headers: Enable header/footer setup (default: False)
             doc_title: Document title for header
-            copyright_text: Copyright text for footer (mendukung placeholder {iso_year})
-            sni_number: Nomor SNI untuk mengekstrak tahun (opsional)
+            copyright_text: Copyright text for footer
             
         Returns:
             (success: bool, message: str)
         """
         try:
-            # =====================================================
-            # EKSTRAK TAHUN DARI SNI NUMBER
-            # =====================================================
-            iso_year = _extract_year_from_sni(sni_number) if sni_number else None
-            
-            # Ganti placeholder {iso_year} di copyright_text jika ada
-            if iso_year and '{iso_year}' in copyright_text:
-                copyright_text = copyright_text.replace('{iso_year}', iso_year)
-            elif iso_year and '©BSN' in copyright_text:
-                # Jika copyright_text default dan ada tahun yang diekstrak, ganti tahunnya
-                # Pola: ©BSN XXXX → ganti XXXX dengan tahun dari SNI
-                copyright_text = re.sub(r'(©BSN\s*)\d{4}', rf'\g<1>{iso_year}', copyright_text)
-
             doc = Document(input_path)
 
             # Hapus semua hyperlink → jadikan teks biasa
