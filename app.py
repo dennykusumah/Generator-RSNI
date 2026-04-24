@@ -1668,13 +1668,13 @@ def _claude_chat(system: str, messages: list) -> str:
 _now = time.strftime("%H:%M")
 st.markdown(
     f"<div class='footer'>"
-    f"© 2026 ISO to RSNI Converter · Generator RSNI · All rights reserved."
-    f"<br><span style='font-size:0.72rem;opacity:0.8;color:#ffffff;'>"
-       f"Developed by Denny Kusuma Hendraningrat" 
-    f"<br>"
     f"<a href='https://docs.google.com/spreadsheets/d/1BBPCMPwvbBk5LPdoDQwnjQzcPHv7_RDKENqeMsklF-8/edit?usp=sharing' target='_blank' style='color:#ffffff;text-decoration:none;'>📖 Kamus SNI</a>"
     f"&nbsp;&nbsp;·&nbsp;&nbsp;"
     f"<a href='https://docs.google.com/spreadsheets/d/1NZm1HjsjxmflxnZlzV_O2XF75ZlMUOu8VVofsKfp_FA/edit?usp=sharing' target='_blank' style='color:#ffffff;text-decoration:none;'>🌐 Kamus Istilah Asing</a>"
+    f"<br>"
+    f"© 2026 ISO to RSNI Converter · Generator RSNI · All rights reserved."
+    f"<br><span style='font-size:0.72rem;opacity:0.8;color:#ffffff;'>"
+    f"Developed by Denny Kusuma Hendraningrat" 
     f"</span>"
     f"</div>",
     unsafe_allow_html=True
