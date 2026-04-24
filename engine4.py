@@ -646,6 +646,7 @@ def build_copyright_body_xml(bsn_year, iso_year, city="Jakarta"):
     )
 
     return push_spacers + bordered_table
+
 def make_rels_with_image(media_filename):
     return (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
@@ -715,6 +716,12 @@ class CoverPageEngine:
         try:
             if not ref_standard:
                 ref_standard = sni_number.replace("SNI ", "", 1) + ", IDT"
+
+            # ── AUTO-EXTRACT: Ambil tahun ISO dari sni_number jika iso_year masih default ──
+            if iso_year == "20XX":
+                year_match = re.search(r':(\d{4})', sni_number)
+                if year_match:
+                    iso_year = year_match.group(1)
 
             # Load logos
             sni_bytes = self._load_file(self.sni_logo_path)
