@@ -1672,6 +1672,8 @@ st.markdown(
     f"<a href='https://docs.google.com/spreadsheets/d/1BBPCMPwvbBk5LPdoDQwnjQzcPHv7_RDKENqeMsklF-8/edit?usp=sharing' target='_blank' style='color:#ffffff;text-decoration:none;'>📖 Kamus SNI</a>"
     f"&nbsp;&nbsp;·&nbsp;&nbsp;"
     f"<a href='https://docs.google.com/spreadsheets/d/1NZm1HjsjxmflxnZlzV_O2XF75ZlMUOu8VVofsKfp_FA/edit?usp=sharing' target='_blank' style='color:#ffffff;text-decoration:none;'>🌐 Kamus Istilah Asing</a>"
+    f"<br>"
+    f"<a href='https://iec-converter.streamlit.app' target='_blank' style='color:#ffffff;text-decoration:none;'> 📄 IEC Converter</a>"
     f"</span>"
     f"<br>"
     f"<span style='font-size:0.8rem;color:#ffffff;'>© 2026 ISO to RSNI Converter · Generator RSNI · All rights reserved.</span>"
