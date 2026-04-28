@@ -1676,7 +1676,7 @@ st.markdown(
     f"<a href='https://iec-to-iso.streamlit.app/' target='_blank' style='color:#ffffff;text-decoration:none;'> 📄 IEC to ISO Converter</a>"
     f"</span>"
     f"<br>"
-    f"<span style='font-size:0.8rem;color:#ffffff;'>© 2026 ISO to RSNI Converter · Generator RSNI · All rights reserved.</span>"
+    f"<span style='font-size:0.8rem;color:#ffffff;'>© 2026 Generator RSNI · ISO to RSNI Converter · Generator RSNI · All rights reserved.</span>"
     f"<br>"
     f"<span style='font-size:0.72rem;opacity:0.8;color:#ffffff;'>Developed by Denny Kusuma H. & Ahmad Habibi</span>"
     f"</div>",
